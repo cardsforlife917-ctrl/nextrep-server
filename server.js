@@ -158,7 +158,9 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
   }
 });
 
-app.get('/health', (req, res) => res.json({ ok: true }));
+app.get('/health', (req, res) =>
+  res.json({ ok: true, nodeVersion: process.version, deployMarker: 'v2-node-pin' })
+);
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR));
