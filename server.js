@@ -154,7 +154,12 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
     if (error instanceof Anthropic.AuthenticationError) {
       return res.status(500).json({ error: 'Server misconfigured (invalid API key).' });
     }
-    return res.status(502).json({ error: 'Failed to generate plan.' });
+    return res.status(502).json({
+      error: 'Failed to generate plan.',
+      debugName: error.name,
+      debugMessage: error.message,
+      debugStatus: error.status,
+    });
   }
 });
 
