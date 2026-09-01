@@ -154,18 +154,11 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
     if (error instanceof Anthropic.AuthenticationError) {
       return res.status(500).json({ error: 'Server misconfigured (invalid API key).' });
     }
-    return res.status(502).json({
-      error: 'Failed to generate plan.',
-      debugName: error.name,
-      debugMessage: error.message,
-      debugStatus: error.status,
-    });
+    return res.status(502).json({ error: 'Failed to generate plan.' });
   }
 });
 
-app.get('/health', (req, res) =>
-  res.json({ ok: true, nodeVersion: process.version, deployMarker: 'v2-node-pin' })
-);
+app.get('/health', (req, res) => res.json({ ok: true }));
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR));
