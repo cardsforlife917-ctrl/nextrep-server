@@ -8,3 +8,5 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: NODE_VERSION
+        value: 20.18.1
