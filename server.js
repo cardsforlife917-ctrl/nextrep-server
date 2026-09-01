@@ -58,9 +58,14 @@ const PLAN_TOOL = {
       estimatedDurationMinutes: { type: 'number' },
       warmup: { type: 'array', items: exerciseSchema, minItems: 1 },
       exercises: { type: 'array', items: exerciseSchema, minItems: 1 },
+      weightRoom: {
+        type: 'array',
+        items: exerciseSchema,
+        description: 'Weight room / strength training exercises. Empty array if not requested.',
+      },
       cooldown: { type: 'array', items: exerciseSchema, minItems: 1 },
     },
-    required: ['title', 'estimatedDurationMinutes', 'warmup', 'exercises', 'cooldown'],
+    required: ['title', 'estimatedDurationMinutes', 'warmup', 'exercises', 'weightRoom', 'cooldown'],
     additionalProperties: false,
   },
 };
@@ -74,9 +79,23 @@ const SCHEDULE_SESSION_SCHEMA = {
     estimatedDurationMinutes: { type: 'number' },
     warmup: { type: 'array', items: exerciseSchema, minItems: 1 },
     exercises: { type: 'array', items: exerciseSchema, minItems: 1 },
+    weightRoom: {
+      type: 'array',
+      items: exerciseSchema,
+      description: 'Weight room / strength training exercises. Empty array if not requested.',
+    },
     cooldown: { type: 'array', items: exerciseSchema, minItems: 1 },
   },
-  required: ['dayLabel', 'title', 'focus', 'estimatedDurationMinutes', 'warmup', 'exercises', 'cooldown'],
+  required: [
+    'dayLabel',
+    'title',
+    'focus',
+    'estimatedDurationMinutes',
+    'warmup',
+    'exercises',
+    'weightRoom',
+    'cooldown',
+  ],
   additionalProperties: false,
 };
 
@@ -103,7 +122,31 @@ const VARIETY_ANGLES = [
   'Emphasize decision-making and reactive drills over purely mechanical repetition.',
 ];
 
-function buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, players }) {
+function buildWeightRoomInstruction(weightRoomGoals) {
+  if (!Array.isArray(weightRoomGoals) || weightRoomGoals.length === 0) {
+    return "The athlete does not want a weight room section. Return an empty array for 'weightRoom'.";
+  }
+
+  const lines = [
+    `The athlete also wants a dedicated weight room / strength training section, on top of the sport drills, to enhance athletic performance.`,
+    'Keep it athletic-performance oriented, not bodybuilding/aesthetics-oriented — favor compound, functional, sport-transfer lifts (squats, deadlifts, presses, Olympic lift variations, plyometrics, sled work, medicine ball throws, etc.) over isolation/machine work, and explain briefly in each description how the lift transfers to the sport.',
+    'Include real strength-training exercises tailored to the available equipment in the \'weightRoom\' array. This is separate from the skill drills in \'exercises\'.',
+    `Focus on these specific goals: ${weightRoomGoals.join(', ')}.`,
+  ];
+
+  return lines.join('\n');
+}
+
+function buildPrompt({
+  sport,
+  skills,
+  positions,
+  level,
+  equipment,
+  timeMinutes,
+  players,
+  weightRoomGoals,
+}) {
   const varietyAngle = VARIETY_ANGLES[Math.floor(Math.random() * VARIETY_ANGLES.length)];
 
   const lines = [
@@ -116,6 +159,7 @@ function buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, 
     'The total time across warm-up, exercises, and cool-down should roughly add up to the requested duration.',
     'Each exercise needs a clear name, a short description of how to perform it, sets/reps or a duration, and the exact equipment it personally needs (not the full available list).',
     `Style for this session: ${varietyAngle}`,
+    buildWeightRoomInstruction(weightRoomGoals),
   ];
 
   if (Array.isArray(positions) && positions.length > 0) {
@@ -139,7 +183,17 @@ function buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, 
   return lines.join('\n');
 }
 
-function buildSchedulePrompt({ sport, skills, positions, level, equipment, players, timeMinutes, daysPerWeek }) {
+function buildSchedulePrompt({
+  sport,
+  skills,
+  positions,
+  level,
+  equipment,
+  players,
+  timeMinutes,
+  daysPerWeek,
+  weightRoomGoals,
+}) {
   const lines = [
     `Create a weekly ${sport} training schedule for a ${level} athlete, with exactly ${daysPerWeek} distinct workout sessions across the week.`,
     `Skills to develop overall: ${skills.join(', ')}.`,
@@ -150,6 +204,7 @@ function buildSchedulePrompt({ sport, skills, positions, level, equipment, playe
     'Warm-up exercises must be on-ball/on-equipment movements specific to the sport — do not include generic cardio like jogging in place, jumping jacks, or arm circles.',
     'Each exercise needs a clear name, a short description, sets/reps or a duration, and the exact equipment it personally needs.',
     'Give each session a short dayLabel like "Day 1", "Day 2", etc. in order, plus a one or two word focus label (e.g. "Shooting", "Conditioning").',
+    buildWeightRoomInstruction(weightRoomGoals),
   ];
 
   if (Array.isArray(positions) && positions.length > 0) {
@@ -168,7 +223,7 @@ function buildSchedulePrompt({ sport, skills, positions, level, equipment, playe
 }
 
 app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
-  const { sport, skills, positions, level, equipment, timeMinutes, players } = req.body || {};
+  const { sport, skills, positions, level, equipment, timeMinutes, players, weightRoomGoals } = req.body || {};
 
   if (!sport || !Array.isArray(skills) || skills.length === 0 || !level || !Array.isArray(equipment) || !timeMinutes) {
     return res.status(400).json({ error: 'Missing or invalid request fields.' });
@@ -180,7 +235,12 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
       max_tokens: 4096,
       tools: [PLAN_TOOL],
       tool_choice: { type: 'tool', name: 'create_workout_plan' },
-      messages: [{ role: 'user', content: buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, players }) }],
+      messages: [
+        {
+          role: 'user',
+          content: buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, players, weightRoomGoals }),
+        },
+      ],
     });
 
     const toolUse = message.content.find((block) => block.type === 'tool_use');
@@ -201,6 +261,7 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
       estimatedDurationMinutes: plan.estimatedDurationMinutes,
       warmup: withIds(plan.warmup, 'warmup'),
       exercises: withIds(plan.exercises, 'exercise'),
+      weightRoom: withIds(plan.weightRoom, 'weightroom'),
       cooldown: withIds(plan.cooldown, 'cooldown'),
     });
   } catch (error) {
@@ -216,7 +277,8 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
 });
 
 app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
-  const { sport, skills, positions, level, equipment, timeMinutes, players, daysPerWeek } = req.body || {};
+  const { sport, skills, positions, level, equipment, timeMinutes, players, daysPerWeek, weightRoomGoals } =
+    req.body || {};
 
   if (
     !sport ||
@@ -239,7 +301,17 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
       messages: [
         {
           role: 'user',
-          content: buildSchedulePrompt({ sport, skills, positions, level, equipment, players, timeMinutes, daysPerWeek }),
+          content: buildSchedulePrompt({
+            sport,
+            skills,
+            positions,
+            level,
+            equipment,
+            players,
+            timeMinutes,
+            daysPerWeek,
+            weightRoomGoals,
+          }),
         },
       ],
     });
@@ -263,6 +335,7 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
       estimatedDurationMinutes: session.estimatedDurationMinutes,
       warmup: withIds(session.warmup, `warmup_${index}`),
       exercises: withIds(session.exercises, `exercise_${index}`),
+      weightRoom: withIds(session.weightRoom, `weightroom_${index}`),
       cooldown: withIds(session.cooldown, `cooldown_${index}`),
     }));
 
