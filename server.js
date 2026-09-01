@@ -65,6 +65,35 @@ const PLAN_TOOL = {
   },
 };
 
+const SCHEDULE_SESSION_SCHEMA = {
+  type: 'object',
+  properties: {
+    dayLabel: { type: 'string', description: 'e.g. "Day 1"' },
+    title: { type: 'string' },
+    focus: { type: 'string', description: 'The primary skill or theme this session emphasizes' },
+    estimatedDurationMinutes: { type: 'number' },
+    warmup: { type: 'array', items: exerciseSchema, minItems: 1 },
+    exercises: { type: 'array', items: exerciseSchema, minItems: 1 },
+    cooldown: { type: 'array', items: exerciseSchema, minItems: 1 },
+  },
+  required: ['dayLabel', 'title', 'focus', 'estimatedDurationMinutes', 'warmup', 'exercises', 'cooldown'],
+  additionalProperties: false,
+};
+
+const SCHEDULE_TOOL = {
+  name: 'create_weekly_schedule',
+  description: 'Create a weekly training schedule made of several distinct workout sessions.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sessions: { type: 'array', items: SCHEDULE_SESSION_SCHEMA, minItems: 1 },
+    },
+    required: ['sessions'],
+    additionalProperties: false,
+  },
+};
+
 const VARIETY_ANGLES = [
   'Emphasize footwork and body mechanics in each drill.',
   'Emphasize game-speed, competitive-tempo execution rather than static repetition.',
@@ -104,6 +133,34 @@ function buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, 
       players.length === 1
         ? `The athlete wants to model their training after ${playerList}. Design drills that mirror ${playerList}'s actual known game — their signature moves, go-to techniques, and the specific way they use these skills in real play — not just generic drills for the sport. Name the real move in the exercise description where it applies (e.g. a specific step-back, a specific footwork pattern) if it's genuinely well known. Do not fabricate specific stats or claims you are not confident are publicly accurate.`
         : `The athlete wants to model their training after multiple players: ${playerList}. Dedicate different drills to different players' known signature moves and techniques — mirror each player's actual known game rather than generic drills, and name the real move in the exercise description where it applies (e.g. a specific step-back, a specific release, a specific footwork pattern) if it's genuinely well known. Do not fabricate specific stats or claims you are not confident are publicly accurate.`
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function buildSchedulePrompt({ sport, skills, positions, level, equipment, players, timeMinutes, daysPerWeek }) {
+  const lines = [
+    `Create a weekly ${sport} training schedule for a ${level} athlete, with exactly ${daysPerWeek} distinct workout sessions across the week.`,
+    `Skills to develop overall: ${skills.join(', ')}.`,
+    `Available equipment: ${equipment.join(', ')}.`,
+    'Only use equipment from that list in any exercise (bodyweight-only exercises are always fine).',
+    `Each session should be about ${timeMinutes} minutes total (warm-up + exercises + cool-down).`,
+    'Each session must have a genuinely different focus/theme from the others — spread the requested skills across the week rather than repeating the same drills every session (e.g. one day could emphasize one skill, another day a different skill, another day combine skills at game speed).',
+    'Warm-up exercises must be on-ball/on-equipment movements specific to the sport — do not include generic cardio like jogging in place, jumping jacks, or arm circles.',
+    'Each exercise needs a clear name, a short description, sets/reps or a duration, and the exact equipment it personally needs.',
+    'Give each session a short dayLabel like "Day 1", "Day 2", etc. in order, plus a one or two word focus label (e.g. "Shooting", "Conditioning").',
+  ];
+
+  if (Array.isArray(positions) && positions.length > 0) {
+    lines.push(`The athlete plays ${positions.join(' and ')}. Tailor drills to that position's responsibilities within ${sport}.`);
+  }
+
+  if (Array.isArray(players) && players.length > 0) {
+    lines.push(
+      `The athlete wants to model their training after ${players.join(
+        ' and '
+      )}. Where genuinely relevant, mirror their known signature moves and playing style across the sessions. Do not fabricate stats or claims you are not confident are publicly accurate.`
     );
   }
 
@@ -155,6 +212,70 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
       return res.status(500).json({ error: 'Server misconfigured (invalid API key).' });
     }
     return res.status(502).json({ error: 'Failed to generate plan.' });
+  }
+});
+
+app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
+  const { sport, skills, positions, level, equipment, timeMinutes, players, daysPerWeek } = req.body || {};
+
+  if (
+    !sport ||
+    !Array.isArray(skills) ||
+    skills.length === 0 ||
+    !level ||
+    !Array.isArray(equipment) ||
+    !timeMinutes ||
+    !daysPerWeek
+  ) {
+    return res.status(400).json({ error: 'Missing or invalid request fields.' });
+  }
+
+  try {
+    const message = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 8192,
+      tools: [SCHEDULE_TOOL],
+      tool_choice: { type: 'tool', name: 'create_weekly_schedule' },
+      messages: [
+        {
+          role: 'user',
+          content: buildSchedulePrompt({ sport, skills, positions, level, equipment, players, timeMinutes, daysPerWeek }),
+        },
+      ],
+    });
+
+    const toolUse = message.content.find((block) => block.type === 'tool_use');
+    if (!toolUse) {
+      return res.status(502).json({ error: 'Model did not return a structured schedule.' });
+    }
+
+    const withIds = (list, prefix) =>
+      (list || []).map((exercise, index) => ({
+        id: `${prefix}_${index}`,
+        equipment: [],
+        ...exercise,
+      }));
+
+    const sessions = (toolUse.input.sessions || []).map((session, index) => ({
+      dayLabel: session.dayLabel,
+      title: session.title,
+      focus: session.focus,
+      estimatedDurationMinutes: session.estimatedDurationMinutes,
+      warmup: withIds(session.warmup, `warmup_${index}`),
+      exercises: withIds(session.exercises, `exercise_${index}`),
+      cooldown: withIds(session.cooldown, `cooldown_${index}`),
+    }));
+
+    return res.json({ sessions });
+  } catch (error) {
+    console.error('generate-schedule failed:', error);
+    if (error instanceof Anthropic.RateLimitError) {
+      return res.status(429).json({ error: 'Rate limited, try again shortly.' });
+    }
+    if (error instanceof Anthropic.AuthenticationError) {
+      return res.status(500).json({ error: 'Server misconfigured (invalid API key).' });
+    }
+    return res.status(502).json({ error: 'Failed to generate schedule.' });
   }
 });
 
