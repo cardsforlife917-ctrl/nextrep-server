@@ -161,6 +161,7 @@ function buildPrompt({
   timeMinutes,
   players,
   weightRoomGoals,
+  recentHistory,
 }) {
   const varietyAngle = VARIETY_ANGLES[Math.floor(Math.random() * VARIETY_ANGLES.length)];
 
@@ -176,6 +177,12 @@ function buildPrompt({
     `Style for this session: ${varietyAngle}`,
     buildWeightRoomInstruction(weightRoomGoals),
   ];
+
+  if (recentHistory) {
+    lines.push(
+      `Recent training history for this athlete, for context — use it to adapt intelligently (adjust difficulty up or down, avoid repeating the same exercises, keep it motivating): ${recentHistory}`
+    );
+  }
 
   if (Array.isArray(positions) && positions.length > 0) {
     const positionList = positions.join(' and ');
@@ -198,7 +205,7 @@ function buildPrompt({
   return lines.join('\n');
 }
 
-function buildOnCourtSchedulePrompt({ sport, skills, positions, level, equipment, players, timeMinutes, days }) {
+function buildOnCourtSchedulePrompt({ sport, skills, positions, level, equipment, players, timeMinutes, days, recentHistory }) {
   const lines = [
     `Create a weekly ${sport} on-court/skill training schedule for a ${level} athlete, with exactly ${days} distinct sessions across the week.`,
     `Skills to develop overall: ${skills.join(', ')}.`,
@@ -229,10 +236,16 @@ function buildOnCourtSchedulePrompt({ sport, skills, positions, level, equipment
     );
   }
 
+  if (recentHistory) {
+    lines.push(
+      `Recent training history for this athlete, for context — use it to adapt intelligently (adjust difficulty up or down, avoid repeating the same exercises, keep it motivating): ${recentHistory}`
+    );
+  }
+
   return lines.join('\n');
 }
 
-function buildWeightRoomSchedulePrompt({ sport, level, equipment, players, timeMinutes, days, weightRoomGoals }) {
+function buildWeightRoomSchedulePrompt({ sport, level, equipment, players, timeMinutes, days, weightRoomGoals, recentHistory }) {
   const lines = [
     `Create a weekly weight room / strength training schedule for a ${level} ${sport} athlete, with exactly ${days} distinct sessions across the week.`,
     `Available equipment: ${equipment.join(', ')}.`,
@@ -257,11 +270,17 @@ function buildWeightRoomSchedulePrompt({ sport, level, equipment, players, timeM
     );
   }
 
+  if (recentHistory) {
+    lines.push(
+      `Recent training history for this athlete, for context — use it to adapt intelligently (adjust difficulty up or down, avoid repeating the same exercises, keep it motivating): ${recentHistory}`
+    );
+  }
+
   return lines.join('\n');
 }
 
 app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
-  const { sport, skills, positions, level, equipment, timeMinutes, players, weightRoomGoals } = req.body || {};
+  const { sport, skills, positions, level, equipment, timeMinutes, players, weightRoomGoals, recentHistory } = req.body || {};
 
   if (!sport || !Array.isArray(skills) || skills.length === 0 || !level || !Array.isArray(equipment) || !timeMinutes) {
     return res.status(400).json({ error: 'Missing or invalid request fields.' });
@@ -276,7 +295,7 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
       messages: [
         {
           role: 'user',
-          content: buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, players, weightRoomGoals }),
+          content: buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, players, weightRoomGoals, recentHistory }),
         },
       ],
     });
@@ -326,6 +345,7 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
     onCourtDays,
     weightRoomDays,
     weightRoomGoals,
+    recentHistory,
   } = req.body || {};
 
   if (
@@ -367,6 +387,7 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
             players,
             timeMinutes,
             days: onCourtDays,
+            recentHistory,
           }),
         },
       ],
@@ -408,6 +429,7 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
               timeMinutes,
               days: weightRoomDays,
               weightRoomGoals,
+              recentHistory,
             }),
           },
         ],
