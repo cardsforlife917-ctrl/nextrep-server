@@ -27,7 +27,7 @@ app.use(express.json());
 
 const generatePlanLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 20,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many plan requests from this device. Try again later.' },
