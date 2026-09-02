@@ -70,43 +70,58 @@ const PLAN_TOOL = {
   },
 };
 
-const SCHEDULE_SESSION_SCHEMA = {
+const ON_COURT_SESSION_SCHEMA = {
   type: 'object',
   properties: {
-    dayLabel: { type: 'string', description: 'e.g. "Day 1"' },
+    dayLabel: { type: 'string', description: 'e.g. "On-Court Day 1"' },
     title: { type: 'string' },
     focus: { type: 'string', description: 'The primary skill or theme this session emphasizes' },
     estimatedDurationMinutes: { type: 'number' },
     warmup: { type: 'array', items: exerciseSchema, minItems: 1 },
     exercises: { type: 'array', items: exerciseSchema, minItems: 1 },
-    weightRoom: {
-      type: 'array',
-      items: exerciseSchema,
-      description: 'Weight room / strength training exercises. Empty array if not requested.',
-    },
     cooldown: { type: 'array', items: exerciseSchema, minItems: 1 },
   },
-  required: [
-    'dayLabel',
-    'title',
-    'focus',
-    'estimatedDurationMinutes',
-    'warmup',
-    'exercises',
-    'weightRoom',
-    'cooldown',
-  ],
+  required: ['dayLabel', 'title', 'focus', 'estimatedDurationMinutes', 'warmup', 'exercises', 'cooldown'],
   additionalProperties: false,
 };
 
-const SCHEDULE_TOOL = {
-  name: 'create_weekly_schedule',
-  description: 'Create a weekly training schedule made of several distinct workout sessions.',
+const ON_COURT_SCHEDULE_TOOL = {
+  name: 'create_on_court_schedule',
+  description: 'Create a weekly on-court/skill training schedule made of several distinct sessions.',
   strict: true,
   input_schema: {
     type: 'object',
     properties: {
-      sessions: { type: 'array', items: SCHEDULE_SESSION_SCHEMA, minItems: 1 },
+      sessions: { type: 'array', items: ON_COURT_SESSION_SCHEMA, minItems: 1 },
+    },
+    required: ['sessions'],
+    additionalProperties: false,
+  },
+};
+
+const WEIGHT_ROOM_SESSION_SCHEMA = {
+  type: 'object',
+  properties: {
+    dayLabel: { type: 'string', description: 'e.g. "Weight Room Day 1"' },
+    title: { type: 'string' },
+    focus: { type: 'string', description: 'The primary strength goal this session emphasizes' },
+    estimatedDurationMinutes: { type: 'number' },
+    warmup: { type: 'array', items: exerciseSchema, minItems: 1 },
+    weightRoom: { type: 'array', items: exerciseSchema, minItems: 1 },
+    cooldown: { type: 'array', items: exerciseSchema, minItems: 1 },
+  },
+  required: ['dayLabel', 'title', 'focus', 'estimatedDurationMinutes', 'warmup', 'weightRoom', 'cooldown'],
+  additionalProperties: false,
+};
+
+const WEIGHT_ROOM_SCHEDULE_TOOL = {
+  name: 'create_weight_room_schedule',
+  description: 'Create a weekly weight room / strength training schedule made of several distinct sessions.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sessions: { type: 'array', items: WEIGHT_ROOM_SESSION_SCHEMA, minItems: 1 },
     },
     required: ['sessions'],
     additionalProperties: false,
@@ -183,19 +198,9 @@ function buildPrompt({
   return lines.join('\n');
 }
 
-function buildSchedulePrompt({
-  sport,
-  skills,
-  positions,
-  level,
-  equipment,
-  players,
-  timeMinutes,
-  daysPerWeek,
-  weightRoomGoals,
-}) {
+function buildOnCourtSchedulePrompt({ sport, skills, positions, level, equipment, players, timeMinutes, days }) {
   const lines = [
-    `Create a weekly ${sport} training schedule for a ${level} athlete, with exactly ${daysPerWeek} distinct workout sessions across the week.`,
+    `Create a weekly ${sport} on-court/skill training schedule for a ${level} athlete, with exactly ${days} distinct sessions across the week.`,
     `Skills to develop overall: ${skills.join(', ')}.`,
     `Available equipment: ${equipment.join(', ')}.`,
     'Only use equipment from that list in any exercise (bodyweight-only exercises are always fine).',
@@ -203,8 +208,7 @@ function buildSchedulePrompt({
     'Each session must have a genuinely different focus/theme from the others — spread the requested skills across the week rather than repeating the same drills every session (e.g. one day could emphasize one skill, another day a different skill, another day combine skills at game speed).',
     'Warm-up exercises must be on-ball/on-equipment movements specific to the sport — do not include generic cardio like jogging in place, jumping jacks, or arm circles.',
     'Each exercise needs a clear name, a short description, sets/reps or a duration, and the exact equipment it personally needs.',
-    'Give each session a short dayLabel like "Day 1", "Day 2", etc. in order, plus a one or two word focus label (e.g. "Shooting", "Conditioning").',
-    buildWeightRoomInstruction(weightRoomGoals),
+    'Give each session a short dayLabel like "On-Court Day 1", "On-Court Day 2", etc. in order, plus a one or two word focus label (e.g. "Shooting", "Conditioning"). This is skill/on-court training only — do not include weight room or gym strength work in these sessions.',
   ];
 
   if (Array.isArray(positions) && positions.length > 0) {
@@ -216,6 +220,34 @@ function buildSchedulePrompt({
       `The athlete wants to model their training after ${players.join(
         ' and '
       )}. Where genuinely relevant, mirror their known signature moves and playing style across the sessions. Do not fabricate stats or claims you are not confident are publicly accurate.`
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function buildWeightRoomSchedulePrompt({ sport, level, equipment, players, timeMinutes, days, weightRoomGoals }) {
+  const lines = [
+    `Create a weekly weight room / strength training schedule for a ${level} ${sport} athlete, with exactly ${days} distinct sessions across the week.`,
+    `Available equipment: ${equipment.join(', ')}.`,
+    'Only use equipment from that list.',
+    `Each session should be about ${timeMinutes} minutes total (warm-up + weight room work + cool-down).`,
+    'Keep it athletic-performance oriented, not bodybuilding/aesthetics-oriented — favor compound, functional, sport-transfer lifts (squats, deadlifts, presses, Olympic lift variations, plyometrics, sled work, medicine ball throws, etc.) over isolation/machine work, and explain briefly in each description how the lift transfers to the sport.',
+    'Each session must have a genuinely different emphasis from the others (e.g. one day lower-body/power focused, another day upper-body/pulling focused, another day full-body explosive work) rather than repeating identical lifts every session.',
+    'Warm-up should be light, dynamic movement prep for lifting (not sport skill drills).',
+    'Each exercise needs a clear name, a short description, sets/reps or a duration, and the exact equipment it personally needs.',
+    'Give each session a short dayLabel like "Weight Room Day 1", "Weight Room Day 2", etc. in order, plus a one or two word focus label (e.g. "Lower Body", "Power").',
+  ];
+
+  if (Array.isArray(weightRoomGoals) && weightRoomGoals.length > 0) {
+    lines.push(`Focus on these specific goals across the week: ${weightRoomGoals.join(', ')}.`);
+  }
+
+  if (Array.isArray(players) && players.length > 0) {
+    lines.push(
+      `The athlete wants their physical training to reflect ${players.join(
+        ' and '
+      )}'s known athletic profile where genuinely relevant. Do not fabricate specific stats, routines, or claims you are not confident are publicly accurate.`
     );
   }
 
@@ -277,8 +309,18 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
 });
 
 app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
-  const { sport, skills, positions, level, equipment, timeMinutes, players, daysPerWeek, weightRoomGoals } =
-    req.body || {};
+  const {
+    sport,
+    skills,
+    positions,
+    level,
+    equipment,
+    timeMinutes,
+    players,
+    onCourtDays,
+    weightRoomDays,
+    weightRoomGoals,
+  } = req.body || {};
 
   if (
     !sport ||
@@ -287,21 +329,30 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
     !level ||
     !Array.isArray(equipment) ||
     !timeMinutes ||
-    !daysPerWeek
+    !onCourtDays
   ) {
     return res.status(400).json({ error: 'Missing or invalid request fields.' });
   }
 
+  const withIds = (list, prefix) =>
+    (list || []).map((exercise, index) => ({
+      id: `${prefix}_${index}`,
+      equipment: [],
+      ...exercise,
+    }));
+
   try {
-    const message = await anthropic.messages.create({
+    const sessions = [];
+
+    const onCourtMessage = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 8192,
-      tools: [SCHEDULE_TOOL],
-      tool_choice: { type: 'tool', name: 'create_weekly_schedule' },
+      tools: [ON_COURT_SCHEDULE_TOOL],
+      tool_choice: { type: 'tool', name: 'create_on_court_schedule' },
       messages: [
         {
           role: 'user',
-          content: buildSchedulePrompt({
+          content: buildOnCourtSchedulePrompt({
             sport,
             skills,
             positions,
@@ -309,35 +360,70 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
             equipment,
             players,
             timeMinutes,
-            daysPerWeek,
-            weightRoomGoals,
+            days: onCourtDays,
           }),
         },
       ],
     });
 
-    const toolUse = message.content.find((block) => block.type === 'tool_use');
-    if (!toolUse) {
+    const onCourtTool = onCourtMessage.content.find((block) => block.type === 'tool_use');
+    if (!onCourtTool) {
       return res.status(502).json({ error: 'Model did not return a structured schedule.' });
     }
 
-    const withIds = (list, prefix) =>
-      (list || []).map((exercise, index) => ({
-        id: `${prefix}_${index}`,
-        equipment: [],
-        ...exercise,
-      }));
+    (onCourtTool.input.sessions || []).forEach((session, index) => {
+      sessions.push({
+        dayLabel: session.dayLabel || `On-Court Day ${index + 1}`,
+        title: session.title,
+        focus: session.focus,
+        sessionType: 'on_court',
+        estimatedDurationMinutes: session.estimatedDurationMinutes,
+        warmup: withIds(session.warmup, `oc_warmup_${index}`),
+        exercises: withIds(session.exercises, `oc_exercise_${index}`),
+        weightRoom: [],
+        cooldown: withIds(session.cooldown, `oc_cooldown_${index}`),
+      });
+    });
 
-    const sessions = (toolUse.input.sessions || []).map((session, index) => ({
-      dayLabel: session.dayLabel,
-      title: session.title,
-      focus: session.focus,
-      estimatedDurationMinutes: session.estimatedDurationMinutes,
-      warmup: withIds(session.warmup, `warmup_${index}`),
-      exercises: withIds(session.exercises, `exercise_${index}`),
-      weightRoom: withIds(session.weightRoom, `weightroom_${index}`),
-      cooldown: withIds(session.cooldown, `cooldown_${index}`),
-    }));
+    if (weightRoomDays > 0) {
+      const wrMessage = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 8192,
+        tools: [WEIGHT_ROOM_SCHEDULE_TOOL],
+        tool_choice: { type: 'tool', name: 'create_weight_room_schedule' },
+        messages: [
+          {
+            role: 'user',
+            content: buildWeightRoomSchedulePrompt({
+              sport,
+              level,
+              equipment,
+              players,
+              timeMinutes,
+              days: weightRoomDays,
+              weightRoomGoals,
+            }),
+          },
+        ],
+      });
+
+      const wrTool = wrMessage.content.find((block) => block.type === 'tool_use');
+      if (wrTool) {
+        (wrTool.input.sessions || []).forEach((session, index) => {
+          sessions.push({
+            dayLabel: session.dayLabel || `Weight Room Day ${index + 1}`,
+            title: session.title,
+            focus: session.focus,
+            sessionType: 'weight_room',
+            estimatedDurationMinutes: session.estimatedDurationMinutes,
+            warmup: withIds(session.warmup, `wr_warmup_${index}`),
+            exercises: [],
+            weightRoom: withIds(session.weightRoom, `wr_weightroom_${index}`),
+            cooldown: withIds(session.cooldown, `wr_cooldown_${index}`),
+          });
+        });
+      }
+    }
 
     return res.json({ sessions });
   } catch (error) {
