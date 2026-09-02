@@ -33,6 +33,19 @@ const generatePlanLimiter = rateLimit({
   message: { error: 'Too many plan requests from this device. Try again later.' },
 });
 
+// YouTube's free quota is only ~100 searches/day for the whole app (shared across
+// every user), so this cache is what makes the feature viable — the same exercise
+// or player name only ever costs one real search, no matter how many people look it up.
+const youtubeCache = new Map();
+
+const youtubeLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many video lookups from this device. Try again later.' },
+});
+
 const exerciseSchema = {
   type: 'object',
   properties: {
@@ -473,6 +486,50 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'legal', 'privacy.html')));
+
+app.get('/youtube-video', youtubeLimiter, async (req, res) => {
+  const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (!query) {
+    return res.status(400).json({ error: 'Missing query.' });
+  }
+
+  if (youtubeCache.has(query)) {
+    return res.json(youtubeCache.get(query));
+  }
+
+  if (!process.env.YOUTUBE_API_KEY) {
+    // Feature not configured — client falls back to a plain search link.
+    return res.json({ url: null, title: null });
+  }
+
+  try {
+    const params = new URLSearchParams({
+      part: 'snippet',
+      type: 'video',
+      maxResults: '1',
+      q: query,
+      key: process.env.YOUTUBE_API_KEY,
+    });
+    const ytResponse = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
+    if (!ytResponse.ok) {
+      return res.json({ url: null, title: null });
+    }
+    const data = await ytResponse.json();
+    const item = (data.items || [])[0];
+    const result = item
+      ? {
+          url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
+          title: item.snippet?.title || null,
+        }
+      : { url: null, title: null };
+
+    youtubeCache.set(query, result);
+    return res.json(result);
+  } catch (error) {
+    console.error('YouTube lookup failed:', error.message);
+    return res.json({ url: null, title: null });
+  }
+});
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR));
