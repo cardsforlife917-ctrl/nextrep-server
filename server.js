@@ -211,6 +211,12 @@ function buildOnCourtSchedulePrompt({ sport, skills, positions, level, equipment
     'Give each session a short dayLabel like "On-Court Day 1", "On-Court Day 2", etc. in order, plus a one or two word focus label (e.g. "Shooting", "Conditioning"). This is skill/on-court training only — do not include weight room or gym strength work in these sessions.',
   ];
 
+  if (Array.isArray(skills) && skills.some((skill) => /shooting/i.test(skill))) {
+    lines.push(
+      'Shooting is a top priority skill for this athlete. On the session whose main focus IS shooting, shooting should dominate — most of the exercises that day should be shooting work. On every OTHER session, still include exactly one shooting exercise as a lighter touch (not the main focus, just one drill) so shooting gets reinforced all week without taking over days meant for other skills.'
+    );
+  }
+
   if (Array.isArray(positions) && positions.length > 0) {
     lines.push(`The athlete plays ${positions.join(' and ')}. Tailor drills to that position's responsibilities within ${sport}.`);
   }
