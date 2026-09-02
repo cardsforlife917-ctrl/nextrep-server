@@ -213,7 +213,7 @@ function buildOnCourtSchedulePrompt({ sport, skills, positions, level, equipment
 
   if (Array.isArray(skills) && skills.some((skill) => /shooting/i.test(skill))) {
     lines.push(
-      'Shooting is a top priority skill for this athlete. On the session whose main focus IS shooting, shooting should dominate — most of the exercises that day should be shooting work. On every OTHER session, still include exactly one shooting exercise as a lighter touch (not the main focus, just one drill) so shooting gets reinforced all week without taking over days meant for other skills.'
+      'Shooting is a top priority skill for this athlete. On the session whose main focus IS shooting, shooting should dominate — most of the exercises that day should be shooting work. On every OTHER session, do NOT add a separate standalone shooting exercise to the list — instead blend shooting into that day\'s existing exercises themselves, so a couple of the normal drills naturally finish into a shot as part of what they already are (e.g. a ball-handling drill\'s description ends with "...then finish with a shot off the dribble"; a defense drill ends with "...then contest and box out as the shot goes up"). The exercise count and names should still read as pure ball-handling/defense/etc. drills — the shot is just folded into how a drill finishes, not called out as its own thing.'
     );
   }
 
