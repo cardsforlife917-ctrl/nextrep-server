@@ -17,6 +17,11 @@ if (!process.env.ANTHROPIC_API_KEY) {
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const app = express();
+// Render (and most PaaS hosts) put the app behind a reverse proxy. Without this,
+// Express can't see the real client IP (everything looks like it comes from the
+// proxy), which silently made the rate limiter below share one bucket across
+// every user instead of limiting per-device.
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
@@ -467,6 +472,7 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
 });
 
 app.get('/health', (req, res) => res.json({ ok: true }));
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'legal', 'privacy.html')));
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR));
