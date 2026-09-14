@@ -499,7 +499,7 @@ app.get('/youtube-video', youtubeLimiter, async (req, res) => {
 
   if (!process.env.YOUTUBE_API_KEY) {
     // Feature not configured — client falls back to a plain search link.
-    return res.json({ url: null, title: null, debugReason: 'no_key' });
+    return res.json({ url: null, title: null });
   }
 
   try {
@@ -513,13 +513,8 @@ app.get('/youtube-video', youtubeLimiter, async (req, res) => {
     const ytResponse = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
     if (!ytResponse.ok) {
       const errorBody = await ytResponse.text();
-      return res.json({
-        url: null,
-        title: null,
-        debugReason: 'youtube_api_error',
-        debugStatus: ytResponse.status,
-        debugBody: errorBody.slice(0, 300),
-      });
+      console.error('YouTube API error:', ytResponse.status, errorBody.slice(0, 300));
+      return res.json({ url: null, title: null });
     }
     const data = await ytResponse.json();
     const item = (data.items || [])[0];
@@ -528,13 +523,13 @@ app.get('/youtube-video', youtubeLimiter, async (req, res) => {
           url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
           title: item.snippet?.title || null,
         }
-      : { url: null, title: null, debugReason: 'no_results' };
+      : { url: null, title: null };
 
     youtubeCache.set(query, result);
     return res.json(result);
   } catch (error) {
     console.error('YouTube lookup failed:', error.message);
-    return res.json({ url: null, title: null, debugReason: 'exception', debugMessage: error.message });
+    return res.json({ url: null, title: null });
   }
 });
 
