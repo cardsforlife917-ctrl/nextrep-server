@@ -33,6 +33,15 @@ const generatePlanLimiter = rateLimit({
   message: { error: 'Too many plan requests from this device. Try again later.' },
 });
 
+// Anonymous, in-memory usage counters — no per-user data, nothing identifying.
+// Resets on every deploy/restart (there's no database), so this is "usage since
+// the server last restarted," not a lifetime total.
+const usageStats = {
+  startedAt: new Date().toISOString(),
+  plansGenerated: 0,
+  schedulesGenerated: 0,
+};
+
 // YouTube's free quota is only ~100 searches/day for the whole app (shared across
 // every user), so this cache is what makes the feature viable — the same exercise
 // or player name only ever costs one real search, no matter how many people look it up.
@@ -395,6 +404,7 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
         ...exercise,
       }));
 
+    usageStats.plansGenerated += 1;
     return res.json({
       title: plan.title,
       estimatedDurationMinutes: plan.estimatedDurationMinutes,
@@ -544,6 +554,7 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
       }
     }
 
+    usageStats.schedulesGenerated += 1;
     return res.json({ sessions });
   } catch (error) {
     console.error('generate-schedule failed:', error);
@@ -558,6 +569,16 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
 });
 
 app.get('/health', (req, res) => res.json({ ok: true }));
+
+app.get('/stats', (req, res) => {
+  res.json({
+    startedAt: usageStats.startedAt,
+    plansGenerated: usageStats.plansGenerated,
+    schedulesGenerated: usageStats.schedulesGenerated,
+    totalGenerations: usageStats.plansGenerated + usageStats.schedulesGenerated,
+    note: 'Anonymous counts since the server last restarted — no per-user data, resets on every deploy.',
+  });
+});
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'legal', 'privacy.html')));
 
 app.get('/youtube-video', youtubeLimiter, async (req, res) => {
