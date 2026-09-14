@@ -170,6 +170,18 @@ function buildWeightRoomInstruction(weightRoomGoals) {
   return lines.join('\n');
 }
 
+function buildInjuryInstruction(injuryAreas) {
+  if (!Array.isArray(injuryAreas) || injuryAreas.length === 0) return null;
+  return `The athlete has reported discomfort or an injury history in: ${injuryAreas.join(
+    ', '
+  )}. Avoid exercises that would aggravate these areas, and substitute safer alternatives where relevant (e.g. reduce deep knee flexion for knee issues, avoid overhead loading for shoulder issues, avoid heavy spinal loading for lower back issues). This is not medical advice — just adapt exercise selection sensibly and do not include anything that sounds like a diagnosis.`;
+}
+
+function buildProgressionInstruction(weekNumber, totalWeeks) {
+  if (!weekNumber || !totalWeeks || totalWeeks <= 1) return null;
+  return `This is week ${weekNumber} of a ${totalWeeks}-week progressive training block. Week 1 should establish baseline technique and moderate intensity. Each subsequent week should meaningfully increase difficulty, intensity, volume, or complexity compared to the previous week, building toward a peak by the final week. Calibrate this session's difficulty specifically for week ${weekNumber} of ${totalWeeks} — do not just repeat week 1 content at the same level.`;
+}
+
 function buildPrompt({
   sport,
   skills,
@@ -180,6 +192,7 @@ function buildPrompt({
   players,
   weightRoomGoals,
   recentHistory,
+  injuryAreas,
 }) {
   const varietyAngle = VARIETY_ANGLES[Math.floor(Math.random() * VARIETY_ANGLES.length)];
 
@@ -195,6 +208,9 @@ function buildPrompt({
     `Style for this session: ${varietyAngle}`,
     buildWeightRoomInstruction(weightRoomGoals),
   ];
+
+  const injuryInstruction = buildInjuryInstruction(injuryAreas);
+  if (injuryInstruction) lines.push(injuryInstruction);
 
   if (recentHistory) {
     lines.push(
@@ -223,7 +239,20 @@ function buildPrompt({
   return lines.join('\n');
 }
 
-function buildOnCourtSchedulePrompt({ sport, skills, positions, level, equipment, players, timeMinutes, days, recentHistory }) {
+function buildOnCourtSchedulePrompt({
+  sport,
+  skills,
+  positions,
+  level,
+  equipment,
+  players,
+  timeMinutes,
+  days,
+  recentHistory,
+  injuryAreas,
+  weekNumber,
+  totalWeeks,
+}) {
   const lines = [
     `Create a weekly ${sport} on-court/skill training schedule for a ${level} athlete, with exactly ${days} distinct sessions across the week.`,
     `Skills to develop overall: ${skills.join(', ')}.`,
@@ -260,10 +289,28 @@ function buildOnCourtSchedulePrompt({ sport, skills, positions, level, equipment
     );
   }
 
+  const injuryInstruction1 = buildInjuryInstruction(injuryAreas);
+  if (injuryInstruction1) lines.push(injuryInstruction1);
+
+  const progressionInstruction1 = buildProgressionInstruction(weekNumber, totalWeeks);
+  if (progressionInstruction1) lines.push(progressionInstruction1);
+
   return lines.join('\n');
 }
 
-function buildWeightRoomSchedulePrompt({ sport, level, equipment, players, timeMinutes, days, weightRoomGoals, recentHistory }) {
+function buildWeightRoomSchedulePrompt({
+  sport,
+  level,
+  equipment,
+  players,
+  timeMinutes,
+  days,
+  weightRoomGoals,
+  recentHistory,
+  injuryAreas,
+  weekNumber,
+  totalWeeks,
+}) {
   const lines = [
     `Create a weekly weight room / strength training schedule for a ${level} ${sport} athlete, with exactly ${days} distinct sessions across the week.`,
     `Available equipment: ${equipment.join(', ')}.`,
@@ -294,11 +341,28 @@ function buildWeightRoomSchedulePrompt({ sport, level, equipment, players, timeM
     );
   }
 
+  const injuryInstruction2 = buildInjuryInstruction(injuryAreas);
+  if (injuryInstruction2) lines.push(injuryInstruction2);
+
+  const progressionInstruction2 = buildProgressionInstruction(weekNumber, totalWeeks);
+  if (progressionInstruction2) lines.push(progressionInstruction2);
+
   return lines.join('\n');
 }
 
 app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
-  const { sport, skills, positions, level, equipment, timeMinutes, players, weightRoomGoals, recentHistory } = req.body || {};
+  const {
+    sport,
+    skills,
+    positions,
+    level,
+    equipment,
+    timeMinutes,
+    players,
+    weightRoomGoals,
+    recentHistory,
+    injuryAreas,
+  } = req.body || {};
 
   if (!sport || !Array.isArray(skills) || skills.length === 0 || !level || !Array.isArray(equipment) || !timeMinutes) {
     return res.status(400).json({ error: 'Missing or invalid request fields.' });
@@ -313,7 +377,7 @@ app.post('/generate-plan', generatePlanLimiter, async (req, res) => {
       messages: [
         {
           role: 'user',
-          content: buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, players, weightRoomGoals, recentHistory }),
+          content: buildPrompt({ sport, skills, positions, level, equipment, timeMinutes, players, weightRoomGoals, recentHistory, injuryAreas }),
         },
       ],
     });
@@ -364,6 +428,9 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
     weightRoomDays,
     weightRoomGoals,
     recentHistory,
+    injuryAreas,
+    weekNumber,
+    totalWeeks,
   } = req.body || {};
 
   if (
@@ -406,6 +473,9 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
             timeMinutes,
             days: onCourtDays,
             recentHistory,
+            injuryAreas,
+            weekNumber,
+            totalWeeks,
           }),
         },
       ],
@@ -448,6 +518,9 @@ app.post('/generate-schedule', generatePlanLimiter, async (req, res) => {
               days: weightRoomDays,
               weightRoomGoals,
               recentHistory,
+              injuryAreas,
+              weekNumber,
+              totalWeeks,
             }),
           },
         ],
